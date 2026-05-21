@@ -69,10 +69,10 @@ export default function App() {
   const initials  = user.full_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <div className="min-h-screen pb-32 font-sans bg-background text-on-surface overflow-x-hidden selection:bg-primary selection:text-on-primary">
+    <div className="h-screen flex flex-col font-sans bg-background text-on-surface overflow-hidden selection:bg-primary selection:text-on-primary">
 
-      {/* ── Header ── */}
-      <header className="fixed top-0 w-full z-50 glass-navigator border-b border-outline-variant">
+      {/* ── Header — stays fixed at top, never scrolls ── */}
+      <header className="flex-shrink-0 w-full z-50 glass-navigator border-b border-outline-variant">
         <div className="flex justify-between items-center px-6 py-4 w-full max-w-2xl mx-auto">
           <div className="flex items-center gap-4">
             <div className={`w-10 h-10 ${accentClass} rounded-lg flex items-center justify-center transition-all duration-500`}>
@@ -103,7 +103,7 @@ export default function App() {
       </header>
 
       {/* ── Main content ── */}
-      <main className="pt-24 px-6 max-w-2xl mx-auto space-y-8">
+      <main className="flex-1 overflow-y-auto pb-32 px-6 max-w-2xl w-full mx-auto space-y-8 pt-6">
         <AnimatePresence mode="wait">
 
           {/* ── COMMUTER HOME ── */}
@@ -271,7 +271,7 @@ export default function App() {
       </main>
 
       {/* ── Bottom nav ── */}
-      <nav className="fixed bottom-0 left-0 w-full z-50 px-6 pb-8 max-w-2xl mx-auto left-1/2 -translate-x-1/2">
+      <nav className="flex-shrink-0 w-full z-50 px-4 pb-6 pt-2 max-w-2xl mx-auto bg-background">
         <div className="flex justify-around items-center p-2 glass-navigator rounded-3xl border border-outline-variant shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
           {[
             { t: 'home'    as Tab, icon: Home,    label: isDriver ? 'Drive' : isBusiness ? 'Hub' : 'Home' },
