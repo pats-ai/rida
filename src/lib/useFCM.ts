@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
-import { requestNotificationPermission, onForegroundMessage } from './firebase.ts';
+import { requestNotificationPermission, onForegroundMessage } from './firebase';
 
 export type NotifStatus = 'idle' | 'loading' | 'granted' | 'denied' | 'unsupported';
 
