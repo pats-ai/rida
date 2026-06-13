@@ -1,89 +1,135 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  Home, History, User, Wallet, ShieldCheck, TrendingUp,
-  Store, LogOut, RefreshCcw, LayoutGrid, Package
+  RefreshCcw, Home, History, User, Wallet,
+  ShieldCheck, TrendingUp, Store, LogOut, Bell, X, Check
 } from "lucide-react";
 
-import { UserDashboard }   from "./components/UserDashboard";
+import { UserDashboard }  from "./components/UserDashboard";
 import { DriverDashboard } from "./components/DriverDashboard";
-import { AuthScreen }      from "./components/AuthScreen";
-import { HistoryScreen }   from "./components/HistoryScreen";
-import { supabase }        from "./lib/supabase";
+import { AuthScreen }     from "./components/AuthScreen";
+import { supabase }       from "./lib/supabase";
 import { getProfile, signOut, RidaUser } from "./lib/auth";
 
 type Tab = 'home' | 'history' | 'profile';
 
-export default function App() {
-  const [user,     setUser]     = useState<RidaUser | null>(null);
-  const [checking, setChecking] = useState(true);
-  const [tab,      setTab]      = useState<Tab>('home');
+interface Notification {
+  id: string;
+  title: string;
+  body: string;
+  time: string;
+  read: boolean;
+}
 
-  // ── Restore session ──────────────────────────────────────
+// Sample notifications — replace with real Supabase realtime later
+const SAMPLE_NOTIFICATIONS: Notification[] = [
+  { id: '1', title: 'Ride request',      body: 'New ride from Shangani to Port Gate',  time: '2 min ago',  read: false },
+  { id: '2', title: 'Payment received',  body: 'TSh 4,500 credited to your account',   time: '1 hr ago',   read: false },
+  { id: '3', title: 'Ride completed',    body: 'Your ride to Chuno has been completed', time: '3 hrs ago',  read: true  },
+];
+
+export default function App() {
+  const [user,    setUser]    = useState<RidaUser | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [view,    setView]    = useState<'commuter' | 'driver' | 'shopkeeper'>('commuter');
+  const [tab,     setTab]     = useState<Tab>('home');
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [notifs, setNotifs]   = useState<Notification[]>(SAMPLE_NOTIFICATIONS);
+
+  // ── Restore session on load ──────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       if (data.session?.user) {
         const profile = await getProfile(data.session.user.id);
-        if (profile) setUser(profile);
+        if (profile) {
+          setUser(profile);
+          // Auto-switch to correct view based on role
+          if (profile.role === 'driver')   setView('driver');
+          if (profile.role === 'business') setView('shopkeeper');
+        }
       }
       setChecking(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
+
+    // Keep session fresh
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') setUser(null);
     });
     return () => subscription.unsubscribe();
   }, []);
 
-  const handleAuth    = (u: RidaUser) => { setUser(u); setTab('home'); };
-  const handleSignOut = async () => { await signOut(); setUser(null); setTab('home'); };
+  const handleAuth  = (u: RidaUser) => {
+    setUser(u);
+    // Lock view to role — no switching allowed
+    if (u.role === 'driver')   setView('driver');
+    else if (u.role === 'business') setView('shopkeeper');
+    else setView('commuter');
+  };
 
-  // ── Loading splash ───────────────────────────────────────
-  if (checking) return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-5xl font-headline font-bold tracking-tighter mb-4">
-          Ri<span className="text-primary">d</span>a
-        </h1>
-        <div className="w-1.5 h-1.5 rounded-full bg-primary mx-auto animate-ping" />
+  const handleSignOut = async () => {
+    await signOut();
+    setUser(null);
+    setView('commuter');
+    setTab('home');
+  };
+
+  const unreadCount = notifs.filter(n => !n.read).length;
+
+  const markAllRead = () => setNotifs(prev => prev.map(n => ({ ...n, read: true })));
+  const markRead = (id: string) => setNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+
+  // ── Loading ──────────────────────────────────────────────
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-5xl font-headline font-bold tracking-tighter mb-4">Ri<span className="text-primary">d</span>a</h1>
+          <div className="w-1 h-1 rounded-full bg-primary mx-auto animate-ping" />
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  // ── Auth gate ────────────────────────────────────────────
+  // ── Not logged in ────────────────────────────────────────
   if (!user) return <AuthScreen onAuth={handleAuth} />;
 
-  // ── Role-based config ────────────────────────────────────
-  const isDriver   = user.role === 'driver';
-  const isBusiness = user.role === 'business';
-  const isCommuter = user.role === 'commuter';
+  // ── View helpers (locked to role) ────────────────────────
+  const getViewColor = () => {
+    if (view === 'commuter')   return 'bg-primary shadow-[0_0_20px_rgba(200,240,74,0.3)]';
+    if (view === 'driver')     return 'bg-secondary shadow-[0_0_20px_rgba(96,165,250,0.3)]';
+    return 'bg-primary-fixed-dim shadow-[0_0_20px_rgba(174,213,47,0.3)]';
+  };
 
-  const accentClass = isDriver   ? 'bg-secondary text-on-primary shadow-[0_0_20px_rgba(96,165,250,0.35)]'
-                    : isBusiness ? 'bg-primary-fixed-dim text-on-primary shadow-[0_0_20px_rgba(174,213,47,0.3)]'
-                    :              'bg-primary text-on-primary shadow-[0_0_20px_rgba(200,240,74,0.35)]';
+  const getAccentColor = () => {
+    if (view === 'commuter') return 'text-primary';
+    if (view === 'driver')   return 'text-secondary';
+    return 'text-primary-fixed-dim';
+  };
 
-  const accentText = isDriver   ? 'text-secondary'
-                   : isBusiness ? 'text-primary-fixed-dim'
-                   :              'text-primary';
+  const getViewText = () => {
+    if (view === 'commuter') return 'STUDIO';
+    if (view === 'driver')   return 'DRIVE';
+    return 'HUB';
+  };
 
-  const viewLabel = isDriver ? 'DRIVE' : isBusiness ? 'HUB' : 'STUDIO';
-  const initials  = user.full_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const initials = user.full_name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <div className="h-screen flex flex-col font-sans bg-background text-on-surface overflow-hidden selection:bg-primary selection:text-on-primary">
+    <div className="min-h-screen pb-32 font-sans bg-background text-on-surface overflow-x-hidden selection:bg-primary selection:text-on-primary">
 
-      {/* ── Header — stays fixed at top, never scrolls ── */}
-      <header className="flex-shrink-0 w-full z-50 glass-navigator border-b border-outline-variant">
+      {/* Top bar */}
+      <header className="fixed top-0 w-full z-50 glass-navigator border-b border-outline-variant">
         <div className="flex justify-between items-center px-6 py-4 w-full max-w-2xl mx-auto">
           <div className="flex items-center gap-4">
-            <div className={`w-10 h-10 ${accentClass} rounded-lg flex items-center justify-center transition-all duration-500`}>
-              {isBusiness ? <Store size={20} /> : isDriver ? <ShieldCheck size={20} /> : <LayoutGrid size={20} />}
+            <div className={`w-10 h-10 ${getViewColor()} rounded-lg flex items-center justify-center transition-all duration-500`}>
+              {view === 'shopkeeper' ? <Store size={20} className="text-on-primary" /> : view === 'driver' ? <ShieldCheck size={20} className="text-on-primary" /> : <Home size={20} className="text-on-primary" />}
             </div>
             <div>
               <h1 className="text-sm font-bold tracking-tight uppercase">
-                RIDA <span className={`${accentText} italic transition-colors duration-500`}>{viewLabel}</span>
+                RIDA <span className={`${getAccentColor()} italic transition-colors duration-500`}>{getViewText()}</span>
               </h1>
               <div className="flex items-center gap-2">
-                <div className={`h-1.5 w-1.5 rounded-full ${isDriver ? 'bg-secondary' : 'bg-primary'} animate-pulse`} />
+                <div className={`h-1.5 w-1.5 rounded-full ${view === 'commuter' ? 'bg-primary' : 'bg-secondary'} animate-pulse`} />
                 <p className="text-[9px] text-on-surface-variant uppercase tracking-widest font-mono">
                   {user.full_name} · {user.role}
                 </p>
@@ -91,28 +137,122 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm ${
-              isDriver ? 'bg-secondary/20 text-secondary' : 'bg-primary/20 text-primary'
-            }`}>{initials}</div>
-            <motion.button whileTap={{ scale: 0.9 }} onClick={handleSignOut}
-              className="text-on-surface-variant hover:text-on-surface transition-colors">
-              <LogOut size={18} />
+            {/* Notifications bell */}
+            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowNotifs(true)} className="relative text-on-surface-variant hover:text-on-surface transition-colors">
+              <Bell size={20} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center">
+                  {unreadCount}
+                </span>
+              )}
             </motion.button>
+            {/* Avatar */}
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm ${view === 'driver' ? 'bg-secondary/20 text-secondary' : 'bg-primary/20 text-primary'}`}>
+              {initials}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* ── Main content ── */}
-      <main className="flex-1 overflow-y-auto pb-32 px-6 max-w-2xl w-full mx-auto space-y-8 pt-6">
+      {/* ── Notifications panel ── */}
+      <AnimatePresence>
+        {showNotifs && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm" onClick={() => setShowNotifs(false)} />
+            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-surface-container rounded-t-3xl border-t border-outline-variant max-w-2xl mx-auto px-6 pt-6 pb-10 max-h-[70vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="font-headline font-bold text-xl">Notifications</h2>
+                <div className="flex gap-4 items-center">
+                  {unreadCount > 0 && (
+                    <button onClick={markAllRead} className="text-xs font-mono text-primary underline">Mark all read</button>
+                  )}
+                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowNotifs(false)}>
+                    <X size={20} className="text-on-surface-variant" />
+                  </motion.button>
+                </div>
+              </div>
+              {notifs.length === 0 ? (
+                <p className="text-on-surface-variant text-sm text-center py-8 font-mono">No notifications yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {notifs.map(n => (
+                    <motion.div key={n.id} whileTap={{ scale: 0.98 }} onClick={() => markRead(n.id)}
+                      className={`p-4 rounded-2xl border transition-all cursor-pointer ${n.read ? 'border-outline-variant bg-surface-container-low opacity-60' : 'border-primary/30 bg-primary/5'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <p className="font-bold text-sm">{n.title}</p>
+                          <p className="text-xs text-on-surface-variant mt-1">{n.body}</p>
+                          <p className="text-[10px] font-mono text-on-surface-variant mt-2 opacity-60">{n.time}</p>
+                        </div>
+                        {!n.read ? <div className="w-2 h-2 rounded-full bg-primary mt-1 flex-shrink-0" /> : <Check size={14} className="text-on-surface-variant mt-1 flex-shrink-0" />}
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <main className="pt-24 px-6 max-w-2xl mx-auto space-y-8">
         <AnimatePresence mode="wait">
 
-          {/* ── COMMUTER HOME ── */}
-          {isCommuter && tab === 'home' && (
-            <motion.div key="commuter-home"
-              initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-              className="space-y-10">
+          {/* ── HISTORY TAB ── */}
+          {tab === 'history' && (
+            <motion.div key="history" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="space-y-4 pb-12">
+              <h2 className="font-headline font-bold text-2xl">History</h2>
+              <p className="text-on-surface-variant text-xs font-mono uppercase tracking-widest">
+                {view === 'driver' ? 'Your completed rides' : 'Your past rides & deliveries'}
+              </p>
+              {[
+                { label: view === 'driver' ? 'Ride to Port Gate' : 'Ride to Shangani', sub: 'Today · 10:24am', amount: view === 'driver' ? '+4,500 TSh' : '4,500 TSh' },
+                { label: view === 'driver' ? 'Delivery – Chuno' : 'Delivery to Chuno', sub: 'Yesterday · 3:12pm', amount: view === 'driver' ? '+3,200 TSh' : '3,200 TSh' },
+                { label: view === 'driver' ? 'Ride to Mikindani' : 'Ride to Mikindani', sub: 'Mon · 8:55am', amount: view === 'driver' ? '+5,000 TSh' : '5,000 TSh' },
+              ].map((item, i) => (
+                <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
+                  className="flex items-center justify-between p-4 rounded-2xl bg-surface-container-low border border-outline-variant">
+                  <div>
+                    <p className="font-bold text-sm">{item.label}</p>
+                    <p className="text-xs text-on-surface-variant font-mono mt-1">{item.sub}</p>
+                  </div>
+                  <p className={`font-mono font-bold text-sm ${view === 'driver' ? 'text-green-400' : 'text-on-surface'}`}>{item.amount}</p>
+                </motion.div>
+              ))}
+              <p className="text-center text-xs font-mono text-on-surface-variant pt-4 opacity-50">Full history coming soon</p>
+            </motion.div>
+          )}
 
-              {/* Hero */}
+          {/* ── PROFILE TAB ── */}
+          {tab === 'profile' && (
+            <motion.div key="profile-tab" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="space-y-6 pb-12">
+              <h2 className="font-headline font-bold text-2xl">Profile</h2>
+              <div className="p-6 rounded-2xl bg-surface-container-low border border-outline-variant space-y-4">
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-xl ${view === 'driver' ? 'bg-secondary/20 text-secondary' : 'bg-primary/20 text-primary'}`}>
+                  {initials}
+                </div>
+                <div>
+                  <p className="font-bold text-lg">{user.full_name}</p>
+                  <p className="text-xs font-mono text-on-surface-variant mt-1">{user.phone}</p>
+                  <p className="text-xs font-mono text-on-surface-variant">{user.area ?? 'Mtwara'}</p>
+                </div>
+                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest ${view === 'driver' ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary'}`}>
+                  {user.role}
+                </div>
+              </div>
+              <motion.button whileTap={{ scale: 0.98 }} onClick={handleSignOut}
+                className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl border border-red-500/20 bg-red-500/5 text-red-400 font-bold text-sm">
+                <LogOut size={16} /> Sign out
+              </motion.button>
+            </motion.div>
+          )}
+
+          {/* ── HOME: COMMUTER ── */}
+          {tab === 'home' && view === 'commuter' && (
+            <motion.div key="commuter" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-12">
               <motion.section className="relative h-72 rounded-2xl overflow-hidden group bg-surface-container-lowest">
                 <div className="absolute top-4 right-4 z-20 flex gap-2">
                   <div className="px-2 py-1 rounded bg-black/60 border border-outline-variant backdrop-blur-md text-[8px] font-mono text-on-surface-variant uppercase tracking-widest">Mtwara</div>
@@ -132,12 +272,9 @@ export default function App() {
                   </h2>
                 </div>
               </motion.section>
-
               <UserDashboard user={user} />
-
-              {/* Plan card */}
-              <motion.section className="section-recession p-8 relative overflow-hidden">
-                <div className="flex justify-between items-start mb-6">
+              <motion.section className="section-recession p-8 relative overflow-hidden group">
+                <div className="flex justify-between items-start mb-8">
                   <div>
                     <h3 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-2">Your plan</h3>
                     <p className="text-primary font-bold text-xl tracking-tight">Commuter</p>
@@ -146,59 +283,57 @@ export default function App() {
                     <RefreshCcw size={10} className="animate-spin-slow opacity-50" /> Renews in 14 days
                   </div>
                 </div>
-                <div className="flex justify-between items-end mb-3">
-                  <div>
-                    <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Rides used</span>
-                    <div className="text-3xl font-mono font-bold text-on-surface">14 <span className="text-on-surface-variant font-light">/ 30</span></div>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-end">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Rides used</span>
+                      <span className="text-3xl font-mono font-bold text-on-surface">14 <span className="text-on-surface-variant font-light">/ 30</span></span>
+                    </div>
+                    <span className="text-[10px] font-mono text-primary uppercase tracking-widest font-black">46% remaining</span>
                   </div>
-                  <span className="text-[10px] font-mono text-primary uppercase tracking-widest font-black">46% remaining</span>
-                </div>
-                <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden">
-                  <motion.div initial={{ width: 0 }} animate={{ width: '46%' }} transition={{ duration: 1, delay: 0.5 }}
-                    className="h-full progress-blade shadow-[0_0_15px_rgba(200,240,74,0.3)]" />
+                  <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden">
+                    <motion.div initial={{ width: 0 }} animate={{ width: "46%" }} transition={{ duration: 1, delay: 0.5 }}
+                      className="h-full progress-blade shadow-[0_0_15px_rgba(200,240,74,0.3)]" />
+                  </div>
                 </div>
               </motion.section>
             </motion.div>
           )}
 
-          {/* ── DRIVER HOME ── */}
-          {isDriver && tab === 'home' && (
-            <motion.div key="driver-home"
-              initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
-              className="space-y-10">
+          {/* ── HOME: DRIVER ── */}
+          {tab === 'home' && view === 'driver' && (
+            <motion.div key="driver" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-12">
               <section className="grid grid-cols-2 gap-6">
                 <motion.div className="section-recession p-8 flex flex-col justify-between aspect-square">
-                  <div><Wallet size={28} className="text-secondary mb-3" /><span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-[0.2em] font-black">Earnings today</span></div>
+                  <div className="flex flex-col"><Wallet size={28} className="text-secondary mb-3" /><span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-[0.2em] font-black">Earnings today</span></div>
                   <div><h2 className="text-4xl font-mono font-bold text-on-surface tracking-tighter">8,400</h2><p className="text-secondary text-[10px] font-mono uppercase tracking-[0.2em] font-black mt-2">TSh</p></div>
                 </motion.div>
-                <motion.div className="primary-cta p-8 flex flex-col justify-between aspect-square shadow-2xl">
+                <motion.div className="primary-cta p-8 flex flex-col justify-between aspect-square shadow-2xl relative overflow-hidden group">
                   <div className="flex justify-between items-start"><ShieldCheck size={28} className="text-on-primary" fill="currentColor" /><span className="text-[9px] font-mono font-bold uppercase bg-white/20 px-3 py-1 rounded-full text-on-primary border border-white/20">Top rated</span></div>
                   <div><p className="text-on-primary/60 text-[10px] font-mono uppercase tracking-[0.2em] mb-2 font-black">On-time rate</p><h2 className="text-5xl font-mono font-bold text-on-primary tracking-tighter leading-none">98<span className="text-on-primary/30 font-light">%</span></h2></div>
                 </motion.div>
               </section>
               <DriverDashboard user={user} />
-              <motion.section className="section-recession p-8">
-                <div className="flex justify-between items-center mb-6">
-                  <div><h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.3em] mb-2">Earnings trend</h4><p className="text-[10px] font-mono text-secondary font-black tracking-widest uppercase opacity-70 italic">Last 8 sessions</p></div>
+              <motion.section className="section-recession p-8 relative overflow-hidden">
+                <div className="flex justify-between items-center mb-8">
+                  <div><h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.3em] mb-2">Earnings this week</h4><p className="text-[10px] font-mono text-secondary font-black tracking-widest uppercase opacity-70 italic">Last 4 weeks</p></div>
                   <TrendingUp size={32} className="text-secondary opacity-30" />
                 </div>
                 <div className="h-32 flex items-end gap-2 px-1">
-                  {[30,45,20,80,50,65,40,90].map((h,i) => (
-                    <motion.div key={i} initial={{ height: 0 }} animate={{ height: `${h}%` }} transition={{ duration: 1.5, delay: i*0.1, ease: [0.22,1,0.36,1] }}
-                      className={`flex-1 rounded-t-sm ${h>70?'bg-secondary':'bg-surface-container-highest opacity-50'} h-full`} />
+                  {[30, 45, 20, 80, 50, 65, 40, 90].map((h, i) => (
+                    <motion.div key={i} initial={{ height: 0 }} animate={{ height: `${h}%` }} transition={{ duration: 1.5, delay: i * 0.1, ease: [0.22, 1, 0.36, 1] }}
+                      className={`flex-1 rounded-t-sm ${h > 70 ? 'bg-secondary' : 'bg-surface-container-highest opacity-50'} h-full`} />
                   ))}
                 </div>
               </motion.section>
             </motion.div>
           )}
 
-          {/* ── BUSINESS HOME ── */}
-          {isBusiness && tab === 'home' && (
-            <motion.div key="biz-home"
-              initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
-              className="space-y-10">
+          {/* ── HOME: SHOPKEEPER ── */}
+          {tab === 'home' && view === 'shopkeeper' && (
+            <motion.div key="shopkeeper" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-12">
               <section className="space-y-2">
-                <h2 className={`text-5xl font-headline font-bold tracking-tighter italic ${accentText}`}>
+                <h2 className={`text-5xl font-headline font-bold tracking-tighter italic ${getAccentColor()}`}>
                   {user.business_name ?? 'Business Hub'}
                 </h2>
                 <p className="text-on-surface-variant text-[10px] font-mono uppercase tracking-[0.4em] font-black">Delivery operations</p>
@@ -206,90 +341,46 @@ export default function App() {
               <UserDashboard user={user} />
               <section className="grid grid-cols-2 gap-4 pb-12">
                 {[
-                  { label:'Deliveries sent', val:'52',  accent:'text-primary'    },
-                  { label:'This month (TSh)', val:'300k', accent:'text-on-surface' },
-                  { label:'Avg delivery',    val:'14m', accent:'text-secondary'  },
-                  { label:'Driver rating',   val:'4.9', accent:'text-primary'    },
-                ].map((s,i) => (
+                  { label: 'Deliveries sent',  val: '52',   accent: 'text-primary'   },
+                  { label: 'This month (TSh)', val: '300k', accent: 'text-on-surface' },
+                  { label: 'Avg delivery',     val: '14m',  accent: 'text-secondary'  },
+                  { label: 'Driver rating',    val: '4.9',  accent: 'text-primary'   },
+                ].map((stat, i) => (
                   <motion.div key={i} className="section-recession p-6 flex flex-col justify-between aspect-video">
-                    <span className="text-[9px] font-mono font-black text-on-surface-variant uppercase tracking-[0.2em]">{s.label}</span>
-                    <p className={`text-3xl font-mono font-bold tracking-tighter ${s.accent}`}>{s.val}</p>
+                    <span className="text-[9px] font-mono font-black text-on-surface-variant uppercase tracking-[0.2em]">{stat.label}</span>
+                    <p className={`text-3xl font-mono font-bold tracking-tighter ${stat.accent}`}>{stat.val}</p>
                   </motion.div>
                 ))}
               </section>
             </motion.div>
           )}
 
-          {/* ── HISTORY TAB (all roles) ── */}
-          {tab === 'history' && (
-            <motion.div key="history"
-              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
-              <HistoryScreen user={user} />
-            </motion.div>
-          )}
-
-          {/* ── PROFILE TAB (all roles) ── */}
-          {tab === 'profile' && (
-            <motion.div key="profile"
-              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
-              className="space-y-6 pb-12">
-              <div className="flex flex-col items-center pt-6 pb-8">
-                <div className={`w-20 h-20 rounded-2xl flex items-center justify-center font-headline font-bold text-2xl mb-4 ${
-                  isDriver ? 'bg-secondary/20 text-secondary' : 'bg-primary/20 text-primary'
-                }`}>{initials}</div>
-                <h2 className="font-headline text-2xl font-bold">{user.full_name}</h2>
-                <p className="text-on-surface-variant text-sm mt-1">{user.phone}</p>
-                <div className={`mt-3 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
-                  isDriver   ? 'bg-secondary/10 text-secondary' :
-                  isBusiness ? 'bg-primary-fixed-dim/10 text-primary-fixed-dim' :
-                               'bg-primary/10 text-primary'
-                }`}>{user.role}</div>
-              </div>
-
-              <div className="section-recession p-6 space-y-4">
-                <div className="flex justify-between text-sm"><span className="text-on-surface-variant">Name</span><span>{user.full_name}</span></div>
-                <div className="h-px bg-outline-variant" />
-                <div className="flex justify-between text-sm"><span className="text-on-surface-variant">Phone</span><span>{user.phone}</span></div>
-                <div className="h-px bg-outline-variant" />
-                <div className="flex justify-between text-sm"><span className="text-on-surface-variant">Role</span><span className={accentText}>{user.role}</span></div>
-                {user.area && (<><div className="h-px bg-outline-variant" /><div className="flex justify-between text-sm"><span className="text-on-surface-variant">Area</span><span>{user.area}</span></div></>)}
-                {user.business_name && (<><div className="h-px bg-outline-variant" /><div className="flex justify-between text-sm"><span className="text-on-surface-variant">Business</span><span>{user.business_name}</span></div></>)}
-                <div className="h-px bg-outline-variant" />
-                <div className="flex justify-between text-sm"><span className="text-on-surface-variant">Plan</span><span className={accentText}>Commuter · Active</span></div>
-                <div className="h-px bg-outline-variant" />
-                <div className="flex justify-between text-sm"><span className="text-on-surface-variant">Payment</span><span className="text-green-400">Paid via M-Pesa</span></div>
-              </div>
-
-              <motion.button whileTap={{ scale: 0.97 }} onClick={handleSignOut}
-                className="w-full py-4 rounded-2xl border border-red-500/30 text-red-400 text-sm font-bold bg-red-500/5">
-                Sign out
-              </motion.button>
-            </motion.div>
-          )}
-
         </AnimatePresence>
       </main>
 
-      {/* ── Bottom nav ── */}
-      <nav className="flex-shrink-0 w-full z-50 px-4 pb-6 pt-2 max-w-2xl mx-auto bg-background">
+      {/* Bottom nav */}
+      <nav className="fixed bottom-0 left-0 w-full z-50 px-6 pb-8 max-w-2xl mx-auto left-1/2 -translate-x-1/2">
         <div className="flex justify-around items-center p-2 glass-navigator rounded-3xl border border-outline-variant shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
-          {[
-            { t: 'home'    as Tab, icon: Home,    label: isDriver ? 'Drive' : isBusiness ? 'Hub' : 'Home' },
-            { t: 'history' as Tab, icon: History, label: 'History' },
-            { t: 'profile' as Tab, icon: User,    label: 'Profile'  },
-          ].map(({ t, icon: Icon, label }) => (
-            <motion.button key={t} whileTap={{ scale: 0.9 }} onClick={() => setTab(t)}
-              className={`flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all duration-300 ${
-                tab === t
-                  ? `${accentClass} shadow-xl border border-white/10`
-                  : 'text-on-surface-variant'
-              }`}>
-              <Icon size={20} fill={tab === t ? 'currentColor' : 'none'} />
-              <span className="text-[10px] font-mono font-black mt-1.5 uppercase tracking-[0.2em]">{label}</span>
-            </motion.button>
-          ))}
+          <motion.button whileTap={{ scale: 0.9 }} onClick={() => setTab('home')}
+            className={`flex-1 flex flex-col items-center justify-center rounded-2xl py-4 transition-all duration-300 ${tab === 'home' ? `${getViewColor()} text-on-primary shadow-xl border border-white/10` : 'text-on-surface-variant'}`}>
+            <Home size={22} fill={tab === 'home' ? 'currentColor' : 'none'} />
+            <span className="text-[10px] font-mono font-black mt-1.5 uppercase tracking-[0.2em]">
+              {view === 'commuter' ? 'Home' : view === 'driver' ? 'Drive' : 'Hub'}
+            </span>
+          </motion.button>
+          <motion.button whileTap={{ scale: 0.9 }} onClick={() => setTab('history')}
+            className={`flex-1 flex flex-col items-center justify-center rounded-2xl py-4 transition-all duration-300 ${tab === 'history' ? `${getViewColor()} text-on-primary shadow-xl border border-white/10` : 'text-on-surface-variant'}`}>
+            <History size={22} fill={tab === 'history' ? 'currentColor' : 'none'} />
+            <span className="text-[10px] font-mono font-black mt-1.5 uppercase tracking-widest">History</span>
+          </motion.button>
+          <motion.button whileTap={{ scale: 0.9 }} onClick={() => setTab('profile')}
+            className={`flex-1 flex flex-col items-center justify-center rounded-2xl py-4 transition-all duration-300 ${tab === 'profile' ? `${getViewColor()} text-on-primary shadow-xl border border-white/10` : 'text-on-surface-variant'}`}>
+            <User size={22} fill={tab === 'profile' ? 'currentColor' : 'none'} />
+            <span className="text-[10px] font-mono font-black mt-1.5 uppercase tracking-widest">Profile</span>
+          </motion.button>
         </div>
       </nav>
+
     </div>
   );
 }
