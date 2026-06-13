@@ -1,5 +1,4 @@
 import { initializeApp } from 'firebase/app';
-import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDmXg8TtDyqk5AzOq3NZiY6oiaB4NNRELo",
@@ -13,18 +12,19 @@ const firebaseConfig = {
 const VAPID_KEY = 'BC8dadIVzT_2kZxruk_GDbOG3op_xGEtVt7xLE4vrPCJz9ZL2S3zyhiCn-Sm3XD8-OsUcI82MDPtZJhtRPZyUqs';
 
 export const firebaseApp = initializeApp(firebaseConfig);
-export const messaging = getMessaging(firebaseApp);
 
 export async function requestNotificationPermission(): Promise<string | null> {
   try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+
+    const { getMessaging, getToken } = await import('firebase/messaging');
+    const messaging = getMessaging(firebaseApp);
+
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return null;
 
-    const token = await getToken(messaging, {
-      vapidKey: VAPID_KEY,
-      serviceWorkerRegistration: await navigator.serviceWorker.register('/firebase-sw.js'),
-    });
-
+    const reg = await navigator.serviceWorker.register('/firebase-sw.js');
+    const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     return token;
   } catch (err) {
     console.error('FCM token error:', err);
@@ -33,5 +33,14 @@ export async function requestNotificationPermission(): Promise<string | null> {
 }
 
 export function onForegroundMessage(callback: (payload: any) => void) {
-  return onMessage(messaging, callback);
+  try {
+    if (!('serviceWorker' in navigator)) return () => {};
+    import('firebase/messaging').then(({ getMessaging, onMessage }) => {
+      const messaging = getMessaging(firebaseApp);
+      onMessage(messaging, callback);
+    });
+  } catch (err) {
+    console.error('FCM foreground error:', err);
+  }
+  return () => {};
 }
