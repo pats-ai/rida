@@ -10,7 +10,7 @@ import { DriverDashboard } from "./components/DriverDashboard";
 import { AuthScreen }     from "./components/AuthScreen";
 import { supabase }       from "./lib/supabase";
 import { getProfile, signOut, RidaUser } from "./lib/auth";
-
+import { useFCM } from './lib/useFCM';
 type Tab = 'home' | 'history' | 'profile';
 
 interface Notification {
@@ -111,7 +111,7 @@ export default function App() {
     if (view === 'driver')   return 'DRIVE';
     return 'HUB';
   };
-
+const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
   const initials = user.full_name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
@@ -357,7 +357,13 @@ export default function App() {
 
         </AnimatePresence>
       </main>
-
+{notifStatus === 'idle' && (
+  <div className="fixed bottom-28 left-4 right-4 z-40 max-w-md mx-auto bg-surface-container border border-outline-variant rounded-2xl p-4 shadow-2xl">
+    <p className="font-bold text-sm mb-1">Enable notifications</p>
+    <p className="text-xs text-on-surface-variant mb-3">Get alerts for rides and deliveries</p>
+    <button onClick={enableNotif} className="w-full bg-primary text-on-primary py-2.5 rounded-xl text-sm font-bold">Turn on</button>
+  </div>
+)}
       {/* Bottom nav */}
       <nav className="fixed bottom-0 left-0 w-full z-50 px-6 pb-8 max-w-2xl mx-auto left-1/2 -translate-x-1/2">
         <div className="flex justify-around items-center p-2 glass-navigator rounded-3xl border border-outline-variant shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
