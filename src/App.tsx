@@ -35,7 +35,7 @@ export default function App() {
   const [tab,     setTab]     = useState<Tab>('home');
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifs, setNotifs]   = useState<Notification[]>(SAMPLE_NOTIFICATIONS);
-
+const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
   // ── Restore session on load ──────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -111,7 +111,7 @@ export default function App() {
     if (view === 'driver')   return 'DRIVE';
     return 'HUB';
   };
-const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
+
   const initials = user.full_name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
