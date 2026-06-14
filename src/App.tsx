@@ -10,6 +10,7 @@ import { DriverDashboard } from "./components/DriverDashboard";
 import { AuthScreen }     from "./components/AuthScreen";
 import { supabase }       from "./lib/supabase";
 import { getProfile, signOut, RidaUser } from "./lib/auth";
+import { sendNotification } from "./lib/notifications";
 import { useFCM } from './lib/useFCM';
 type Tab = 'home' | 'history' | 'profile';
 
@@ -21,12 +22,8 @@ interface Notification {
   read: boolean;
 }
 
-// Sample notifications — replace with real Supabase realtime later
-const SAMPLE_NOTIFICATIONS: Notification[] = [
-  { id: '1', title: 'Ride request',      body: 'New ride from Shangani to Port Gate',  time: '2 min ago',  read: false },
-  { id: '2', title: 'Payment received',  body: 'TSh 4,500 credited to your account',   time: '1 hr ago',   read: false },
-  { id: '3', title: 'Ride completed',    body: 'Your ride to Chuno has been completed', time: '3 hrs ago',  read: true  },
-];
+// Real notifications loaded from Supabase
+const SAMPLE_NOTIFICATIONS: Notification[] = [];
 
 export default function App() {
   const [user,    setUser]    = useState<RidaUser | null>(null);
@@ -57,7 +54,38 @@ const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
     });
     return () => subscription.unsubscribe();
   }, []);
+// ── Load notifications + subscribe to realtime ───────────
+  useEffect(() => {
+    if (!user) return;
 
+    supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => {
+        if (data) {
+          setNotifs(data.map((n: any) => ({
+            id: n.id,
+            title: n.title,
+            body: n.body,
+            time: new Date(n.created_at).toLocaleString(),
+            read: n.read,
+          })));
+        }
+      });
+
+    const channel = supabase
+      .channel(`notifications-${user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload: any) => {
+        const n = payload.new;
+        setNotifs(prev => [{ id: n.id, title: n.title, body: n.body, time: 'Just now', read: n.read }, ...prev]);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
   const handleAuth  = (u: RidaUser) => {
     setUser(u);
     // Lock view to role — no switching allowed
@@ -75,8 +103,15 @@ const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
 
   const unreadCount = notifs.filter(n => !n.read).length;
 
-  const markAllRead = () => setNotifs(prev => prev.map(n => ({ ...n, read: true })));
-  const markRead = (id: string) => setNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const markAllRead = async () => {
+    setNotifs(prev => prev.map(n => ({ ...n, read: true })));
+    if (user) await supabase.from('notifications').update({ read: true }).eq('user_id', user.id).eq('read', false);
+  };
+
+  const markRead = async (id: string) => {
+    setNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    await supabase.from('notifications').update({ read: true }).eq('id', id);
+  };
 
   // ── Loading ──────────────────────────────────────────────
   if (checking) {
@@ -243,6 +278,10 @@ const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
                   {user.role}
                 </div>
               </div>
+           <motion.button whileTap={{ scale: 0.98 }} onClick={() => sendNotification(user.id, 'Test notification', 'This is a test push from Rida 🎉')}
+                className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl border border-outline-variant bg-surface-container-low font-bold text-sm">
+                <Bell size={16} /> Send test notification
+              </motion.button>
               <motion.button whileTap={{ scale: 0.98 }} onClick={handleSignOut}
                 className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl border border-red-500/20 bg-red-500/5 text-red-400 font-bold text-sm">
                 <LogOut size={16} /> Sign out
