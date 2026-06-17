@@ -1,25 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { RidaUser } from '../lib/auth';
-import { MapPin, Package, Clock, ChevronDown } from 'lucide-react';
+import { MapPin, Package, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { sendNotification } from '../lib/notifications';
 
 interface UserDashboardProps {
   user: RidaUser;
 }
 
-type BookingType = 'ride' | 'delivery';
-type ScheduleType = 'now' | 'later' | 'recurring';
+type BookingType   = 'ride' | 'delivery';
+type ScheduleType  = 'now' | 'later' | 'recurring';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const DELIVERY_CATEGORIES = [
-  { value: 'food',      label: '🍱 Food order'      },
-  { value: 'groceries', label: '🛒 Groceries'        },
+  { value: 'food',      label: '🍱 Food order'       },
+  { value: 'groceries', label: '🛒 Groceries'         },
   { value: 'parcel',    label: '📦 Parcel / document' },
-  { value: 'pharmacy',  label: '💊 Pharmacy / meds'  },
-  { value: 'household', label: '🏠 Household items'  },
-  { value: 'other',     label: '📋 Other'             },
+  { value: 'pharmacy',  label: '💊 Pharmacy / meds'   },
+  { value: 'household', label: '🏠 Household items'   },
+  { value: 'other',     label: '📋 Other'              },
 ];
 
 interface RideRequest {
@@ -59,39 +60,27 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export function UserDashboard({ user }: UserDashboardProps) {
-  // Booking type
-  const [bookingType,   setBookingType]   = useState<BookingType>('ride');
-  const [scheduleType,  setScheduleType]  = useState<ScheduleType>('now');
-
-  // Core fields
-  const [pickup,   setPickup]   = useState('');
-  const [dropoff,  setDropoff]  = useState('');
-
-  // Delivery fields
+  const [bookingType,  setBookingType]  = useState<BookingType>('ride');
+  const [scheduleType, setScheduleType] = useState<ScheduleType>('now');
+  const [pickup,       setPickup]       = useState('');
+  const [dropoff,      setDropoff]      = useState('');
   const [category,     setCategory]     = useState('');
   const [itemDesc,     setItemDesc]     = useState('');
   const [recName,      setRecName]      = useState('');
   const [recPhone,     setRecPhone]     = useState('');
   const [specialInstr, setSpecialInstr] = useState('');
-
-  // Schedule fields
   const [scheduledTime, setScheduledTime] = useState('');
   const [recurringDays, setRecurringDays] = useState<string[]>(['Mon','Tue','Wed','Thu','Fri']);
   const [recurringTime, setRecurringTime] = useState('');
+  const [submitting,   setSubmitting]   = useState(false);
+  const [statusMsg,    setStatusMsg]    = useState('');
+  const [rides,        setRides]        = useState<RideRequest[]>([]);
+  const [loading,      setLoading]      = useState(true);
 
-  // State
-  const [submitting, setSubmitting] = useState(false);
-  const [statusMsg,  setStatusMsg]  = useState('');
-  const [rides,      setRides]      = useState<RideRequest[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const toggleDay = (day: string) =>
+    setRecurringDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
 
-  const toggleDay = (day: string) => {
-    setRecurringDays(prev =>
-      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
-    );
-  };
-
-  // ── Fetch ────────────────────────────────────────────────
+  // ── Fetch active rides ───────────────────────────────────
   const fetchRides = async () => {
     setLoading(true);
     const { data } = await supabase
@@ -104,37 +93,35 @@ export function UserDashboard({ user }: UserDashboardProps) {
     setLoading(false);
   };
 
-  // ── Realtime ─────────────────────────────────────────────
+  // ── Realtime — update state directly, no refetch ─────────
   useEffect(() => {
     fetchRides();
     const channel = supabase
       .channel(`user_rides_${user.id}`)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'ride_requests',
+        event: 'INSERT', schema: 'public', table: 'ride_requests',
         filter: `user_id=eq.${user.id}`,
       }, payload => {
-        if (payload.eventType === 'INSERT') {
-          const r = payload.new as RideRequest;
-          if (['pending','accepted','in_progress'].includes(r.status))
-            setRides(p => [r, ...p]);
+        const r = payload.new as RideRequest;
+        if (['pending','accepted','in_progress'].includes(r.status))
+          setRides(prev => [r, ...prev]);
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'ride_requests',
+        filter: `user_id=eq.${user.id}`,
+      }, payload => {
+        const r = payload.new as RideRequest;
+        if (['completed','cancelled'].includes(r.status)) {
+          setRides(prev => prev.filter(x => x.id !== r.id));
+        } else {
+          setRides(prev => prev.map(x => x.id === r.id ? r : x));
         }
-        if (payload.eventType === 'UPDATE') {
-          setRides(p => {
-            const updated = payload.new as RideRequest;
-            // Remove completed/cancelled from active list
-            if (['completed','cancelled'].includes(updated.status))
-              return p.filter(r => r.id !== updated.id);
-            return p.map(r => r.id === updated.id ? updated : r);
-          });
-        }
-        if (payload.eventType === 'DELETE')
-          setRides(p => p.filter(r => r.id !== payload.old.id));
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user.id]);
 
-  // ── Submit ────────────────────────────────────────────────
+  // ── Submit booking ───────────────────────────────────────
   const submitBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pickup.trim() || !dropoff.trim()) {
@@ -167,7 +154,6 @@ export function UserDashboard({ user }: UserDashboardProps) {
       payload.recurring_days = recurringDays.join(',');
       payload.scheduled_time = recurringTime;
     }
-
     if (bookingType === 'delivery') {
       payload.delivery_category    = category;
       payload.item_description     = itemDesc;
@@ -182,10 +168,20 @@ export function UserDashboard({ user }: UserDashboardProps) {
       setStatusMsg(error.message);
     } else {
       const msg =
-        scheduleType === 'now'       ? (bookingType === 'ride' ? '🏍️ Looking for a driver...' : '📦 Delivery request sent!')
-        : scheduleType === 'later'   ? '📅 Ride scheduled!'
-        :                              '🔁 Recurring ride set up!';
+        scheduleType === 'now'     ? (bookingType === 'ride' ? '🏍️ Looking for a driver...' : '📦 Delivery request sent!')
+        : scheduleType === 'later' ? '📅 Ride scheduled!'
+        :                            '🔁 Recurring ride set up!';
       setStatusMsg(msg);
+
+      // Notify user their booking was received
+      if (scheduleType === 'now') {
+        await sendNotification(
+          user.id,
+          bookingType === 'ride' ? '🏍️ Ride requested' : '📦 Delivery requested',
+          `${pickup.trim()} → ${dropoff.trim()} · Finding a driver...`
+        );
+      }
+
       // Reset form
       setPickup(''); setDropoff(''); setCategory(''); setItemDesc('');
       setRecName(''); setRecPhone(''); setSpecialInstr('');
@@ -237,12 +233,9 @@ export function UserDashboard({ user }: UserDashboardProps) {
         </div>
 
         <form onSubmit={submitBooking} className="space-y-3">
-
-          {/* Route */}
           <input className={inputCls} placeholder="Pickup location"   value={pickup}  onChange={e => setPickup(e.target.value)} />
           <input className={inputCls} placeholder="Drop-off location" value={dropoff} onChange={e => setDropoff(e.target.value)} />
 
-          {/* Later — datetime picker */}
           <AnimatePresence>
             {scheduleType === 'later' && (
               <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }} className="overflow-hidden">
@@ -251,7 +244,6 @@ export function UserDashboard({ user }: UserDashboardProps) {
             )}
           </AnimatePresence>
 
-          {/* Recurring — day picker + time */}
           <AnimatePresence>
             {scheduleType === 'recurring' && (
               <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }} className="overflow-hidden space-y-3">
@@ -261,9 +253,7 @@ export function UserDashboard({ user }: UserDashboardProps) {
                     {DAYS.map(day => (
                       <button key={day} type="button" onClick={() => toggleDay(day)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                          recurringDays.includes(day)
-                            ? 'bg-primary text-on-primary'
-                            : 'bg-surface-container-high text-on-surface-variant'
+                          recurringDays.includes(day) ? 'bg-primary text-on-primary' : 'bg-surface-container-high text-on-surface-variant'
                         }`}>
                         {day}
                       </button>
@@ -275,12 +265,9 @@ export function UserDashboard({ user }: UserDashboardProps) {
             )}
           </AnimatePresence>
 
-          {/* Delivery extra fields */}
           <AnimatePresence>
             {bookingType === 'delivery' && (
               <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }} className="overflow-hidden space-y-3">
-
-                {/* Category */}
                 <div className="relative">
                   <select className={selectCls} value={category} onChange={e => setCategory(e.target.value)}>
                     <option value="">What are you sending?</option>
@@ -290,22 +277,14 @@ export function UserDashboard({ user }: UserDashboardProps) {
                   </select>
                   <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
                 </div>
-
-                {/* Item description */}
                 <textarea className={`${inputCls} resize-none`} rows={2}
                   placeholder="Describe the items e.g. 2 bags rice, cooking oil, bread"
                   value={itemDesc} onChange={e => setItemDesc(e.target.value)} />
-
-                {/* Recipient */}
-                <input className={inputCls} placeholder="Recipient name *" value={recName}  onChange={e => setRecName(e.target.value)} />
-                <input className={inputCls} type="tel" placeholder="Recipient phone e.g. 0712 111 222" value={recPhone} onChange={e => setRecPhone(e.target.value)} />
-
-                {/* Special instructions */}
+                <input className={inputCls} placeholder="Recipient name *"              value={recName}  onChange={e => setRecName(e.target.value)} />
+                <input className={inputCls} type="tel" placeholder="Recipient phone"    value={recPhone} onChange={e => setRecPhone(e.target.value)} />
                 <textarea className={`${inputCls} resize-none`} rows={2}
-                  placeholder="Special instructions e.g. Call on arrival · Keep upright · Leave at gate"
+                  placeholder="Special instructions e.g. Call on arrival · Keep upright"
                   value={specialInstr} onChange={e => setSpecialInstr(e.target.value)} />
-
-                {/* Pricing note for on-demand */}
                 <div className="bg-surface-container-high rounded-xl px-4 py-3 flex items-center justify-between">
                   <span className="text-xs text-on-surface-variant font-mono">Estimated cost</span>
                   <span className="text-sm font-bold text-primary">~2,000 – 3,000 TSh</span>
@@ -314,7 +293,6 @@ export function UserDashboard({ user }: UserDashboardProps) {
             )}
           </AnimatePresence>
 
-          {/* Pricing note for rides (non-subscriber hint) */}
           {bookingType === 'ride' && scheduleType === 'now' && (
             <div className="bg-surface-container-high rounded-xl px-4 py-3 flex items-center justify-between">
               <span className="text-xs text-on-surface-variant font-mono">
@@ -350,24 +328,20 @@ export function UserDashboard({ user }: UserDashboardProps) {
             <motion.div key={ride.id}
               initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
               className="section-recession p-5 mb-3">
-
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="flex items-center gap-2">
                   {ride.type === 'delivery'
                     ? <Package size={13} className="text-blue-400" />
                     : <MapPin   size={13} className="text-primary"  />}
                   <span className="text-[10px] font-mono text-on-surface-variant uppercase">
-                    {ride.type}
-                    {ride.delivery_category ? ` · ${ride.delivery_category}` : ''}
+                    {ride.type}{ride.delivery_category ? ` · ${ride.delivery_category}` : ''}
                   </span>
                 </div>
                 <span className={`text-[10px] font-mono font-bold ${STATUS_COLOR[ride.status] ?? 'text-on-surface-variant'}`}>
                   {STATUS_LABEL[ride.status] ?? ride.status}
                 </span>
               </div>
-
               <p className="font-bold text-sm">{ride.pickup_location} → {ride.dropoff_location}</p>
-
               {ride.item_description && (
                 <p className="text-xs text-on-surface-variant mt-1.5">Items: {ride.item_description}</p>
               )}
@@ -377,7 +351,6 @@ export function UserDashboard({ user }: UserDashboardProps) {
               {ride.special_instructions && (
                 <p className="text-xs text-on-surface-variant mt-1 italic">"{ride.special_instructions}"</p>
               )}
-
               {ride.status === 'accepted' && ride.driver_name && (
                 <div className="mt-3 pt-3 border-t border-outline-variant text-xs text-primary font-mono space-y-0.5">
                   <p>Driver: {ride.driver_name}</p>
