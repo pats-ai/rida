@@ -55,7 +55,3 @@ export const handler = async (event: any) => {
     return { statusCode: 500, body: err.message };
   }
 };
-    console.error('send-push error:', err);
-    return { statusCode: 500, body: err.message };
-  }
-};
