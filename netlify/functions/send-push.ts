@@ -4,7 +4,11 @@ import { getMessaging } from 'firebase-admin/messaging';
 
 if (!getApps().length) {
   initializeApp({
-    credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT!)),
+    credential: cert({
+      projectId: 'freerida-4e874',
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+    }),
   });
 }
 
@@ -47,6 +51,10 @@ export const handler = async (event: any) => {
 
     return { statusCode: 200, body: JSON.stringify({ sent: true }) };
   } catch (err: any) {
+    console.error('send-push error:', err);
+    return { statusCode: 500, body: err.message };
+  }
+};
     console.error('send-push error:', err);
     return { statusCode: 500, body: err.message };
   }
