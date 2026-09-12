@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   RefreshCcw, Home, History, User, Wallet,
-  ShieldCheck, TrendingUp, Store, LogOut, Bell, X, Check
+  ShieldCheck, TrendingUp, Store, LogOut, Bell, X, Check, Star
 } from "lucide-react";
 
 import { UserDashboard }  from "./components/UserDashboard";
@@ -24,7 +24,16 @@ interface Notification {
 
 // Real notifications loaded from Supabase
 const SAMPLE_NOTIFICATIONS: Notification[] = [];
-
+// ⚠️ Placeholder driver stats — not wired to real data yet.
+// TODO: replace with a query once ride_requests has driver ratings,
+// e.g. avg(rating) + count(*) where driver_id = user.id and status = 'completed'.
+interface DriverFeedback { id: string; rider: string; comment: string; rating: number; time: string; }
+const SAMPLE_DRIVER_STATS = { rating: 4.8, totalTrips: 342 };
+const SAMPLE_DRIVER_FEEDBACK: DriverFeedback[] = [
+  { id: 'f1', rider: 'Amina',  comment: 'Very fast and polite driver!',        rating: 5, time: '2d ago' },
+  { id: 'f2', rider: 'Juma',   comment: 'Good ride, arrived on time.',         rating: 5, time: '4d ago' },
+  { id: 'f3', rider: 'Fatma',  comment: 'A bit late but drove safely.',        rating: 4, time: '1w ago' },
+];
 export default function App() {
   const [user,    setUser]    = useState<RidaUser | null>(null);
   const [checking, setChecking] = useState(true);
@@ -263,6 +272,11 @@ const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
 
           {/* ── PROFILE TAB ── */}
           {tab === 'profile' && (
+                      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest ${view === 'driver' ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary'}`}>
+                  {user.role}
+                </div>
+              </div>
+           <motion.button whileTap={{ scale: 0.98 }} onClick={() => sendNotification(user.id, 'Test notification', 'This is a test push from Rida 🎉')}
             <motion.div key="profile-tab" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="space-y-6 pb-12">
               <h2 className="font-headline font-bold text-2xl">Profile</h2>
               <div className="p-6 rounded-2xl bg-surface-container-low border border-outline-variant space-y-4">
@@ -278,6 +292,44 @@ const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
                   {user.role}
                 </div>
               </div>
+                            {/* ── DRIVER STATS ── */}
+              {view === 'driver' && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="section-recession p-5 flex flex-col items-center justify-center gap-1">
+                      <div className="flex items-center gap-1.5">
+                        <Star size={18} className="text-secondary fill-secondary" />
+                        <span className="text-2xl font-mono font-bold">{SAMPLE_DRIVER_STATS.rating.toFixed(1)}</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Rating</span>
+                    </div>
+                    <div className="section-recession p-5 flex flex-col items-center justify-center gap-1">
+                      <span className="text-2xl font-mono font-bold">{SAMPLE_DRIVER_STATS.totalTrips}</span>
+                      <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Total trips</span>
+                    </div>
+                  </div>
+
+                  <div className="p-6 rounded-2xl bg-surface-container-low border border-outline-variant space-y-4">
+                    <h3 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.3em]">Rider feedback</h3>
+                    {SAMPLE_DRIVER_FEEDBACK.map(fb => (
+                      <div key={fb.id} className="pb-4 border-b border-outline-variant last:border-0 last:pb-0">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="font-bold text-sm">{fb.rider}</p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-0.5">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <Star key={i} size={11} className={i < fb.rating ? 'text-secondary fill-secondary' : 'text-outline-variant'} />
+                              ))}
+                            </div>
+                            <span className="text-[10px] font-mono text-on-surface-variant">{fb.time}</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-on-surface-variant">{fb.comment}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
            <motion.button whileTap={{ scale: 0.98 }} onClick={() => sendNotification(user.id, 'Test notification', 'This is a test push from Rida 🎉')}
                 className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl border border-outline-variant bg-surface-container-low font-bold text-sm">
                 <Bell size={16} /> Send test notification
