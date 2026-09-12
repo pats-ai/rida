@@ -24,6 +24,7 @@ interface Notification {
 
 // Real notifications loaded from Supabase
 const SAMPLE_NOTIFICATIONS: Notification[] = [];
+
 // ⚠️ Placeholder driver stats — not wired to real data yet.
 // TODO: replace with a query once ride_requests has driver ratings,
 // e.g. avg(rating) + count(*) where driver_id = user.id and status = 'completed'.
@@ -34,6 +35,7 @@ const SAMPLE_DRIVER_FEEDBACK: DriverFeedback[] = [
   { id: 'f2', rider: 'Juma',   comment: 'Good ride, arrived on time.',         rating: 5, time: '4d ago' },
   { id: 'f3', rider: 'Fatma',  comment: 'A bit late but drove safely.',        rating: 4, time: '1w ago' },
 ];
+
 export default function App() {
   const [user,    setUser]    = useState<RidaUser | null>(null);
   const [checking, setChecking] = useState(true);
@@ -272,11 +274,6 @@ const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
 
           {/* ── PROFILE TAB ── */}
           {tab === 'profile' && (
-                      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest ${view === 'driver' ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary'}`}>
-                  {user.role}
-                </div>
-              </div>
-           <motion.button whileTap={{ scale: 0.98 }} onClick={() => sendNotification(user.id, 'Test notification', 'This is a test push from Rida 🎉')}
             <motion.div key="profile-tab" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="space-y-6 pb-12">
               <h2 className="font-headline font-bold text-2xl">Profile</h2>
               <div className="p-6 rounded-2xl bg-surface-container-low border border-outline-variant space-y-4">
@@ -292,7 +289,8 @@ const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
                   {user.role}
                 </div>
               </div>
-                            {/* ── DRIVER STATS ── */}
+
+              {/* ── DRIVER STATS ── */}
               {view === 'driver' && (
                 <>
                   <div className="grid grid-cols-2 gap-4">
@@ -330,7 +328,8 @@ const { status: notifStatus, enable: enableNotif } = useFCM(user?.id ?? null);
                   </div>
                 </>
               )}
-           <motion.button whileTap={{ scale: 0.98 }} onClick={() => sendNotification(user.id, 'Test notification', 'This is a test push from Rida 🎉')}
+
+              <motion.button whileTap={{ scale: 0.98 }} onClick={() => sendNotification(user.id, 'Test notification', 'This is a test push from Rida 🎉')}
                 className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl border border-outline-variant bg-surface-container-low font-bold text-sm">
                 <Bell size={16} /> Send test notification
               </motion.button>
