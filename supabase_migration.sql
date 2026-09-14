@@ -49,6 +49,10 @@ create table if not exists ride_requests (
   type             text not null default 'ride'
                    check (type in ('ride', 'delivery')),
 
+  -- Rider's own phone (denormalized — profiles RLS only allows viewing own row,
+  -- so a driver can't join profiles to get the rider's number)
+  rider_phone      text,
+
   -- Delivery-only fields
   recipient_name   text,
   recipient_phone  text,
@@ -114,6 +118,12 @@ alter publication supabase_realtime add table profiles;
 -- Supabase Dashboard → Authentication → Providers → Phone
 -- Enable Phone and add your Twilio credentials
 -- (or use "Test OTP: 000000" in dev mode — no Twilio needed)
+
+-- ── 5. RIDER PHONE ON EXISTING TABLE ───────────────────────
+-- The live ride_requests table already exists, so `create table if not
+-- exists` above won't add this column to it — alter it directly.
+
+alter table ride_requests add column if not exists rider_phone text;
 
 -- ── Done ───────────────────────────────────────────────────
 -- Tables: profiles, ride_requests
