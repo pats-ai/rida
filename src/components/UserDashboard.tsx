@@ -142,6 +142,7 @@ export function UserDashboard({ user }: UserDashboardProps) {
 
     const payload: any = {
       user_id:          user.id,
+      rider_phone:      user.phone,
       pickup_location:  pickup.trim(),
       dropoff_location: dropoff.trim(),
       status:           scheduleType === 'now' ? 'pending' : 'scheduled',

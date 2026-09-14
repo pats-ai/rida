@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { RidaUser } from '../lib/auth';
-import { MapPin, Package, RefreshCw, CheckCircle, Play } from 'lucide-react';
+import { MapPin, Package, RefreshCw, CheckCircle, Play, Phone, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { sendNotification } from '../lib/notifications';
 
@@ -17,10 +17,54 @@ interface RideRequest {
   status: string;
   type: 'ride' | 'delivery';
   driver_id?: string;
+  rider_phone?: string;
   recipient_name?: string;
   recipient_phone?: string;
   notes?: string;
   created_at: string;
+}
+
+// ── Visual-only stepper for accepted → in_progress → completed ─
+const RIDE_STAGES = ['accepted', 'in_progress', 'completed'] as const;
+const RIDE_STAGE_LABELS = ['Accepted', 'In progress', 'Complete'];
+
+function RideProgress({ status }: { status: string }) {
+  const currentIdx = RIDE_STAGES.indexOf(status as typeof RIDE_STAGES[number]);
+  return (
+    <div className="flex items-center mb-3">
+      {RIDE_STAGE_LABELS.map((label, i) => {
+        const done = i < currentIdx;
+        const active = i === currentIdx;
+        return (
+          <div key={label} className="flex items-center flex-1 last:flex-none">
+            <div className="flex flex-col items-center gap-1">
+              <div
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border transition-all ${
+                  done
+                    ? 'bg-primary border-primary text-on-primary'
+                    : active
+                    ? 'border-primary text-primary'
+                    : 'border-outline-variant text-on-surface-variant'
+                }`}
+              >
+                {done ? <Check size={12} /> : i + 1}
+              </div>
+              <span
+                className={`text-[9px] font-mono uppercase tracking-wider whitespace-nowrap ${
+                  active ? 'text-primary font-bold' : 'text-on-surface-variant'
+                }`}
+              >
+                {label}
+              </span>
+            </div>
+            {i < RIDE_STAGE_LABELS.length - 1 && (
+              <div className={`h-px flex-1 mx-1.5 mb-4 ${done ? 'bg-primary' : 'bg-outline-variant'}`} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function DriverDashboard({ user }: DriverDashboardProps) {
@@ -215,34 +259,39 @@ export function DriverDashboard({ user }: DriverDashboardProps) {
           <p className="text-sm text-on-surface-variant font-mono">No active rides</p>
         )}
 
-        {myRides.map(ride => (
-          <motion.div key={ride.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="section-recession p-5 mb-3">
-            <div className="flex items-center gap-2 mb-2">
-              <TypeIcon type={ride.type} />
-              <span className={`text-xs font-mono font-bold ${
-                ride.status === 'accepted'    ? 'text-primary' :
-                ride.status === 'in_progress' ? 'text-yellow-400' : 'text-on-surface-variant'
-              }`}>
-                {ride.status === 'accepted' ? 'Accepted' : ride.status === 'in_progress' ? 'In progress' : ride.status}
-              </span>
-            </div>
-            <p className="font-bold text-sm mb-3">{ride.pickup_location} → {ride.dropoff_location}</p>
-            <div className="flex gap-3">
-              {ride.status === 'accepted' && (
-                <motion.button whileTap={{ scale: 0.97 }} disabled={acting === ride.id} onClick={() => startRide(ride)}
-                  className="flex-1 flex items-center justify-center gap-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 py-2.5 rounded-xl text-sm font-bold">
-                  <Play size={14} /> Start ride
-                </motion.button>
-              )}
-              {ride.status === 'in_progress' && (
-                <motion.button whileTap={{ scale: 0.97 }} disabled={acting === ride.id} onClick={() => completeRide(ride)}
-                  className="flex-1 flex items-center justify-center gap-2 bg-primary/20 text-primary border border-primary/30 py-2.5 rounded-xl text-sm font-bold">
-                  <CheckCircle size={14} /> Mark complete
-                </motion.button>
-              )}
-            </div>
-          </motion.div>
-        ))}
+        {myRides.map(ride => {
+          const callNumber = ride.type === 'delivery' ? ride.recipient_phone : ride.rider_phone;
+          return (
+            <motion.div key={ride.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="section-recession p-5 mb-3">
+              <div className="flex items-center gap-2 mb-3">
+                <TypeIcon type={ride.type} />
+                <span className="text-xs font-mono text-on-surface-variant uppercase">{ride.type}</span>
+              </div>
+              <RideProgress status={ride.status} />
+              <p className="font-bold text-sm mb-3">{ride.pickup_location} → {ride.dropoff_location}</p>
+              <div className="flex gap-3">
+                {callNumber && (
+                  <motion.a whileTap={{ scale: 0.97 }} href={`tel:${callNumber}`}
+                    className="flex items-center justify-center gap-2 bg-surface-container-high text-on-surface border border-outline-variant px-4 py-2.5 rounded-xl text-sm font-bold">
+                    <Phone size={14} /> Call
+                  </motion.a>
+                )}
+                {ride.status === 'accepted' && (
+                  <motion.button whileTap={{ scale: 0.97 }} disabled={acting === ride.id} onClick={() => startRide(ride)}
+                    className="flex-1 flex items-center justify-center gap-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 py-2.5 rounded-xl text-sm font-bold">
+                    <Play size={14} /> Start ride
+                  </motion.button>
+                )}
+                {ride.status === 'in_progress' && (
+                  <motion.button whileTap={{ scale: 0.97 }} disabled={acting === ride.id} onClick={() => completeRide(ride)}
+                    className="flex-1 flex items-center justify-center gap-2 bg-primary/20 text-primary border border-primary/30 py-2.5 rounded-xl text-sm font-bold">
+                    <CheckCircle size={14} /> Mark complete
+                  </motion.button>
+                )}
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
 
     </div>
